@@ -41,126 +41,68 @@
 
     <script>
         let sortOrder = true; // true for ascending, false for descending
-
+        // Load homerooms from /api/homerooms
         async function loadHomerooms() {
             try {
                 const response = await fetch('/api/homerooms');
-                const text = await response.text(); // Get the raw response
-                console.log("Raw response from /api/homerooms:", text); // Log the raw response
-
-                try {
-                    const homerooms = JSON.parse(text); // Attempt to parse JSON
-                    const dropdown = document.getElementById('homeroom');
-                    homerooms.forEach(homeroom => {
-                        const option = document.createElement('option');
-                        option.value = homeroom;
-                        option.textContent = homeroom;
-                        dropdown.appendChild(option);
-                    });
-                } catch (jsonError) {
-                    console.error(`Invalid JSON response: ${text}`); // Log invalid JSON
-                    throw jsonError;
+                if (!response.ok) {
+                    throw new Error(`Failed to load homerooms: ${response.statusText}`);
                 }
+
+                const homerooms = await response.json();
+                const dropdown = document.getElementById('homeroom');
+
+                homerooms.forEach(homeroom => {
+                    const option = document.createElement('option');
+                    option.value = homeroom;
+                    option.textContent = homeroom;
+                    dropdown.appendChild(option);
+                });
             } catch (error) {
-                console.error("Error loading homerooms:", error.message); // Log general errors
+                console.error("Error loading homerooms:", error.message);
             }
         }
 
-
+        // Fetch data for a selected homeroom
         async function fetchHomeroomData() {
             const homeroom = document.getElementById('homeroom').value;
             if (!homeroom) return;
 
-            // Show loading indicator and hide tables/refresh button during fetch
-            document.getElementById('loadingMessage').style.display = 'block';
-            document.getElementById('studentDataTable').style.display = 'none';
-            document.getElementById('refreshButton').style.display = 'none';
-
             try {
-                const response = await fetch(`/api/homerooms/${homeroom}/students`);
+                const response = await fetch(`/api/homerooms/${homeroom}`);
                 if (!response.ok) {
-                    throw new Error(`Homeroom "${homeroom}" not found.`);
+                    throw new Error(`Failed to load students for homeroom "${homeroom}": ${response.statusText}`);
                 }
+
                 const students = await response.json();
-
-                if (!Array.isArray(students)) {
-                    throw new Error("Unexpected data format");
-                }
-
                 displayResults(students);
-
-                // Show table and refresh button after data load
-                document.getElementById('studentDataTable').style.display = 'table';
-                document.getElementById('refreshButton').style.display = 'block';
             } catch (error) {
                 console.error("Error fetching homeroom data:", error.message);
-                const tableBody = document.getElementById('studentDataTable').querySelector('tbody');
-                tableBody.innerHTML = `<tr><td colspan="5">${error.message}</td></tr>`;
-            } finally {
-                // Hide loading indicator
-                document.getElementById('loadingMessage').style.display = 'none';
             }
         }
 
+        // Display student data in a table
         function displayResults(students) {
             const tableBody = document.getElementById('studentDataTable').querySelector('tbody');
             tableBody.innerHTML = ''; // Clear existing rows
 
             students.forEach(student => {
-                // Set initial allowed books based on grade level
-                let initialAllowedBooks = 3; // Default is 3 books for all students
-                if (student.gradeLevel === "3" || student.gradeLevel === "4" || student.gradeLevel === "5") {
-                    initialAllowedBooks = 5; // 5 books for 3rd, 4th, and 5th grades
-                }
-
-                // Calculate allowed books: initial allowed minus books checked out
-                let allowedBooks = initialAllowedBooks - student.booksCheckedOut;
-
-                // Ensure allowed books is never less than 1
-                if (allowedBooks <= 0) allowedBooks = 1;
-
                 const row = `
                     <tr>
-                        <td>${student.name}</td>
-                        <td>${student.nickname}</td>
-                        <td>${student.booksCheckedOut}</td>
-                        <td>${student.overdueBooks}</td>
-                        <td>${allowedBooks}</td>
+                        <td>${student.name || 'N/A'}</td>
+                        <td>${student.nickname || 'N/A'}</td>
+                        <td>${student.booksCheckedOut || 0}</td>
+                        <td>${student.overdueBooks || 0}</td>
+                        <td>${student.allowedBooks || 0}</td>
                     </tr>
                 `;
                 tableBody.innerHTML += row;
             });
         }
 
-
-
-
-
-
-        function refreshData() {
-            fetchHomeroomData(); // Call the fetch function to reload data
-        }
-
-        // Sorting functionality for Allowed Books
-        document.getElementById('sortAllowedBooks').addEventListener('click', function() {
-            const tableBody = document.getElementById('studentDataTable').querySelector('tbody');
-            const rows = Array.from(tableBody.rows);
-
-            rows.sort((a, b) => {
-                const allowedBooksA = parseInt(a.cells[4].textContent, 10);
-                const allowedBooksB = parseInt(b.cells[4].textContent, 10);
-
-                return sortOrder ? allowedBooksA - allowedBooksB : allowedBooksB - allowedBooksA;
-            });
-
-            // Append sorted rows back to the table body
-            rows.forEach(row => tableBody.appendChild(row));
-
-            // Toggle sort order for the next click
-            sortOrder = !sortOrder;
-        });
-
+        // Initialize by loading homerooms
         loadHomerooms();
+
     </script>
 </body>
 </html>
