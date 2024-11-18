@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>List of Homeroom Book Checkouts</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2em; }
+        h1 { color: #333; }
+        label, button, select { display: block; margin: 1em 0; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+        th, td { padding: 0.5em; border: 1px solid #ddd; text-align: left; cursor: pointer; }
+        .loading { color: #555; font-style: italic; display: none; }
+    </style>
+</head>
+<body>
+    <h1>Homeroom Book Checkouts</h1>
+    <label for="homeroom">Select Homeroom:</label>
+    <select id="homeroom" onchange="fetchHomeroomData()">
+        <option value="">Select a homeroom</option>
+    </select>
+    <button onclick="refreshData()" style="display: none;" id="refreshButton">Refresh</button>
+    <p id="loadingMessage" class="loading">Loading data, please wait...</p>
+
+    <!-- Single Table for Student Data -->
+    <h2>Student Book Checkout Data</h2>
+    <table id="studentDataTable">
+        <thead>
+            <tr>
+                <th>Student Name</th>
+                <th>Nickname</th>
+                <th>Books Checked Out</th>
+                <th>Overdue Books</th>
+                <th id="sortAllowedBooks">Allowed Books</th> <!-- Added id for sorting -->
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td colspan="5">No data yet.</td></tr>
+        </tbody>
+    </table>
+
+    <script>
+        let sortOrder = true; // true for ascending, false for descending
+
+        async function loadHomerooms() {
+            try {
+                const response = await fetch('/api/homerooms');
+                const homerooms = await response.json();
+
+                const dropdown = document.getElementById('homeroom');
+                homerooms.forEach(homeroom => {
+                    const option = document.createElement('option');
+                    option.value = homeroom;
+                    option.textContent = homeroom;
+                    dropdown.appendChild(option);
+                });
+            } catch (error) {
+                console.error("Error loading homerooms:", error.message);
+            }
+        }
+
+        async function fetchHomeroomData() {
+            const homeroom = document.getElementById('homeroom').value;
+            if (!homeroom) return;
+
+            // Show loading indicator and hide tables/refresh button during fetch
+            document.getElementById('loadingMessage').style.display = 'block';
+            document.getElementById('studentDataTable').style.display = 'none';
+            document.getElementById('refreshButton').style.display = 'none';
+
+            try {
+                const response = await fetch(`/api/homerooms/${homeroom}/students`);
+                if (!response.ok) {
+                    throw new Error(`Homeroom "${homeroom}" not found.`);
+                }
+                const students = await response.json();
+
+                if (!Array.isArray(students)) {
+                    throw new Error("Unexpected data format");
+                }
+
+                displayResults(students);
+
+                // Show table and refresh button after data load
+                document.getElementById('studentDataTable').style.display = 'table';
+                document.getElementById('refreshButton').style.display = 'block';
+            } catch (error) {
+                console.error("Error fetching homeroom data:", error.message);
+                const tableBody = document.getElementById('studentDataTable').querySelector('tbody');
+                tableBody.innerHTML = `<tr><td colspan="5">${error.message}</td></tr>`;
+            } finally {
+                // Hide loading indicator
+                document.getElementById('loadingMessage').style.display = 'none';
+            }
+        }
+
+        function displayResults(students) {
+            const tableBody = document.getElementById('studentDataTable').querySelector('tbody');
+            tableBody.innerHTML = ''; // Clear existing rows
+
+            students.forEach(student => {
+                // Set initial allowed books based on grade level
+                let initialAllowedBooks = 3; // Default is 3 books for all students
+                if (student.gradeLevel === "3" || student.gradeLevel === "4" || student.gradeLevel === "5") {
+                    initialAllowedBooks = 5; // 5 books for 3rd, 4th, and 5th grades
+                }
+
+                // Calculate allowed books: initial allowed minus books checked out
+                let allowedBooks = initialAllowedBooks - student.booksCheckedOut;
+
+                // Ensure allowed books is never less than 1
+                if (allowedBooks <= 0) allowedBooks = 1;
+
+                const row = `
+                    <tr>
+                        <td>${student.name}</td>
+                        <td>${student.nickname}</td>
+                        <td>${student.booksCheckedOut}</td>
+                        <td>${student.overdueBooks}</td>
+                        <td>${allowedBooks}</td>
+                    </tr>
+                `;
+                tableBody.innerHTML += row;
+            });
+        }
+
+
+
+
+
+
+        function refreshData() {
+            fetchHomeroomData(); // Call the fetch function to reload data
+        }
+
+        // Sorting functionality for Allowed Books
+        document.getElementById('sortAllowedBooks').addEventListener('click', function() {
+            const tableBody = document.getElementById('studentDataTable').querySelector('tbody');
+            const rows = Array.from(tableBody.rows);
+
+            rows.sort((a, b) => {
+                const allowedBooksA = parseInt(a.cells[4].textContent, 10);
+                const allowedBooksB = parseInt(b.cells[4].textContent, 10);
+
+                return sortOrder ? allowedBooksA - allowedBooksB : allowedBooksB - allowedBooksA;
+            });
+
+            // Append sorted rows back to the table body
+            rows.forEach(row => tableBody.appendChild(row));
+
+            // Toggle sort order for the next click
+            sortOrder = !sortOrder;
+        });
+
+        loadHomerooms();
+    </script>
+</body>
+</html>
