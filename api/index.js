@@ -1,13 +1,12 @@
+const fs = require('fs');
+const path = require('path');
 const axios = require('axios');
-const homerooms = require('../homerooms'); // Import homerooms data
 
 const destinyApiUrl = "https://lmc.isb.cn/api/v1/rest/context/destiny";
 let accessToken = null;
 let tokenExpiration = null;
 
-// Fetch a new access token
 async function fetchAccessToken() {
-    console.log("Fetching new access token...");
     const params = new URLSearchParams();
     params.append('grant_type', 'client_credentials');
     params.append('client_id', process.env.CLIENT_ID);
@@ -19,94 +18,84 @@ async function fetchAccessToken() {
 
     accessToken = response.data.access_token;
     tokenExpiration = Date.now() + (response.data.expires_in * 1000);
-    console.log("New access token retrieved successfully:", accessToken);
 }
 
-// Ensure a valid access token
 async function ensureAccessToken() {
     if (!accessToken || Date.now() >= tokenExpiration) {
         await fetchAccessToken();
     }
 }
 
-// Main handler for API requests
 module.exports = async (req, res) => {
     console.log("Request received:", req.url);
 
     if (req.url === '/homerooms') {
-        // Handle `/api/homerooms`
-        console.log("Fetching homerooms...");
-        try {
-            await ensureAccessToken();
-            res.status(200).json(Object.keys(homerooms)); // Send homeroom names to the client
-        } catch (error) {
-            console.error("Error fetching homerooms:", error.message);
-            res.status(500).json({ error: 'Failed to fetch homerooms' });
-        }
+        // Serve static homerooms.json
+        const filePath = path.join(__dirname, '../public/homerooms.json');
+        fs.readFile(filePath, 'utf8', (err, data) => {
+            if (err) {
+                console.error("Error reading homerooms.json:", err);
+                return res.status(500).json({ error: 'Failed to load homerooms' });
+            }
+
+            try {
+                const homerooms = JSON.parse(data);
+                res.status(200).json(Object.keys(homerooms));
+            } catch (parseError) {
+                console.error("Error parsing homerooms.json:", parseError);
+                res.status(500).json({ error: 'Invalid JSON format' });
+            }
+        });
     } else if (req.url.startsWith('/homerooms/')) {
-        // Handle `/api/homerooms/:homeroom/students`
         const homeroom = req.url.split('/')[2];
-        const districtIds = homerooms[homeroom];
+        const filePath = path.join(__dirname, '../public/homerooms.json');
 
-        if (!districtIds) {
-            console.error(`Error: Homeroom "${homeroom}" not found.`);
-            return res.status(404).json({ error: 'Homeroom not found' });
-        }
+        fs.readFile(filePath, 'utf8', (err, data) => {
+            if (err) {
+                console.error("Error reading homerooms.json:", err);
+                return res.status(500).json({ error: 'Failed to load homerooms' });
+            }
 
-        console.log(`Fetching data for Homeroom: ${homeroom}, District IDs: ${JSON.stringify(districtIds)}`);
+            try {
+                const homerooms = JSON.parse(data);
+                const districtIds = homerooms[homeroom];
+                if (!districtIds) {
+                    console.error(`Homeroom "${homeroom}" not found.`);
+                    return res.status(404).json({ error: 'Homeroom not found' });
+                }
 
-        try {
-            await ensureAccessToken();
-            const students = await Promise.all(
-                districtIds.map(async (districtId) => {
-                    try {
-                        const response = await axios.get(
-                            `${destinyApiUrl}/circulation/patrons/${districtId}/status`,
-                            { headers: { Authorization: `Bearer ${accessToken}` } }
-                        );
-
-                        const patron = response.data;
-                        const booksCheckedOut = patron.itemsOut ? patron.itemsOut.length : 0;
-
-                        const today = new Date();
-                        const overdueBooks = patron.itemsOut
-                            ? patron.itemsOut.filter(item => new Date(item.dateDue) < today).length
-                            : 0;
-
-                        const startingBooks = homeroom.startsWith("3") || homeroom.startsWith("4") || homeroom.startsWith("5") ? 5 : 3;
-                        let finalAllowance = startingBooks - booksCheckedOut;
-
-                        if (finalAllowance < 1 || overdueBooks > 0) {
-                            finalAllowance = 1;
-                        }
-
-                        return {
-                            name: `${patron.firstName || 'Unknown'} ${patron.lastName || ''}`.trim(),
-                            nickname: patron.nickName || 'No Nickname',
-                            booksCheckedOut,
-                            overdueBooks,
-                            finalAllowance,
-                        };
-                    } catch (error) {
-                        console.error(`Error fetching data for District ID ${districtId}:`, error.message);
-                        return {
-                            name: "Unknown",
-                            nickname: "No Nickname",
-                            booksCheckedOut: 0,
-                            overdueBooks: 0,
-                            finalAllowance: 1,
-                        };
-                    }
-                })
-            );
-
-            res.status(200).json(students);
-        } catch (error) {
-            console.error(`Error fetching student data:`, error.message);
-            res.status(500).json({ error: 'Failed to fetch students' });
-        }
+                ensureAccessToken()
+                    .then(() => {
+                        Promise.all(
+                            districtIds.map(async (districtId) => {
+                                try {
+                                    const response = await axios.get(
+                                        `${destinyApiUrl}/circulation/patrons/${districtId}/status`,
+                                        { headers: { Authorization: `Bearer ${accessToken}` } }
+                                    );
+                                    return response.data;
+                                } catch (error) {
+                                    console.error(`Error fetching data for District ID ${districtId}:`, error.message);
+                                    return { error: `Failed to fetch data for District ID ${districtId}` };
+                                }
+                            })
+                        )
+                            .then((students) => res.status(200).json(students))
+                            .catch((error) => {
+                                console.error("Error fetching students:", error.message);
+                                res.status(500).json({ error: 'Failed to fetch students' });
+                            });
+                    })
+                    .catch((error) => {
+                        console.error("Error ensuring access token:", error.message);
+                        res.status(500).json({ error: 'Failed to ensure access token' });
+                    });
+            } catch (parseError) {
+                console.error("Error parsing homerooms.json:", parseError);
+                res.status(500).json({ error: 'Invalid JSON format' });
+            }
+        });
     } else {
-        console.error(`Route not found: ${req.url}`);
         res.status(404).json({ error: 'Route not found' });
     }
 };
