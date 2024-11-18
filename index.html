@@ -13,7 +13,7 @@
         .loading { color: #555; font-style: italic; display: none; }
     </style>
 </head>
-<body>
+<body onload="loadHomerooms()">
     <h1>Homeroom Book Checkouts</h1>
     <label for="homeroom">Select Homeroom:</label>
     <select id="homeroom" onchange="fetchHomeroomData()">
@@ -31,7 +31,7 @@
                 <th>Nickname</th>
                 <th>Books Checked Out</th>
                 <th>Overdue Books</th>
-                <th id="sortAllowedBooks">Allowed Books</th> <!-- Added id for sorting -->
+                <th id="sortAllowedBooks">Allowed Books</th>
             </tr>
         </thead>
         <tbody>
@@ -45,8 +45,9 @@
         async function loadHomerooms() {
             try {
                 const response = await fetch('/api/homerooms');
-                const homerooms = await response.json();
+                if (!response.ok) throw new Error(`Failed to load homerooms: ${response.statusText}`);
 
+                const homerooms = await response.json();
                 const dropdown = document.getElementById('homeroom');
                 homerooms.forEach(homeroom => {
                     const option = document.createElement('option');
@@ -63,25 +64,18 @@
             const homeroom = document.getElementById('homeroom').value;
             if (!homeroom) return;
 
-            // Show loading indicator and hide tables/refresh button during fetch
             document.getElementById('loadingMessage').style.display = 'block';
             document.getElementById('studentDataTable').style.display = 'none';
             document.getElementById('refreshButton').style.display = 'none';
 
             try {
-                const response = await fetch(`/api/homerooms/${homeroom}/students`);
+                const response = await fetch(`/api/homerooms/${homeroom}`);
                 if (!response.ok) {
                     throw new Error(`Homeroom "${homeroom}" not found.`);
                 }
                 const students = await response.json();
-
-                if (!Array.isArray(students)) {
-                    throw new Error("Unexpected data format");
-                }
-
                 displayResults(students);
 
-                // Show table and refresh button after data load
                 document.getElementById('studentDataTable').style.display = 'table';
                 document.getElementById('refreshButton').style.display = 'block';
             } catch (error) {
@@ -89,7 +83,6 @@
                 const tableBody = document.getElementById('studentDataTable').querySelector('tbody');
                 tableBody.innerHTML = `<tr><td colspan="5">${error.message}</td></tr>`;
             } finally {
-                // Hide loading indicator
                 document.getElementById('loadingMessage').style.display = 'none';
             }
         }
@@ -99,17 +92,12 @@
             tableBody.innerHTML = ''; // Clear existing rows
 
             students.forEach(student => {
-                // Set initial allowed books based on grade level
-                let initialAllowedBooks = 3; // Default is 3 books for all students
-                if (student.gradeLevel === "3" || student.gradeLevel === "4" || student.gradeLevel === "5") {
-                    initialAllowedBooks = 5; // 5 books for 3rd, 4th, and 5th grades
+                let initialAllowedBooks = 3;
+                if (["3", "4", "5"].includes(student.gradeLevel)) {
+                    initialAllowedBooks = 5;
                 }
-
-                // Calculate allowed books: initial allowed minus books checked out
                 let allowedBooks = initialAllowedBooks - student.booksCheckedOut;
-
-                // Ensure allowed books is never less than 1
-                if (allowedBooks <= 0) allowedBooks = 1;
+                allowedBooks = Math.max(allowedBooks, 1);
 
                 const row = `
                     <tr>
@@ -124,16 +112,10 @@
             });
         }
 
-
-
-
-
-
         function refreshData() {
-            fetchHomeroomData(); // Call the fetch function to reload data
+            fetchHomeroomData();
         }
 
-        // Sorting functionality for Allowed Books
         document.getElementById('sortAllowedBooks').addEventListener('click', function() {
             const tableBody = document.getElementById('studentDataTable').querySelector('tbody');
             const rows = Array.from(tableBody.rows);
@@ -141,18 +123,12 @@
             rows.sort((a, b) => {
                 const allowedBooksA = parseInt(a.cells[4].textContent, 10);
                 const allowedBooksB = parseInt(b.cells[4].textContent, 10);
-
                 return sortOrder ? allowedBooksA - allowedBooksB : allowedBooksB - allowedBooksA;
             });
 
-            // Append sorted rows back to the table body
             rows.forEach(row => tableBody.appendChild(row));
-
-            // Toggle sort order for the next click
             sortOrder = !sortOrder;
         });
-
-        loadHomerooms();
     </script>
 </body>
 </html>
