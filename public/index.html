@@ -45,19 +45,25 @@
         async function loadHomerooms() {
             try {
                 const response = await fetch('/api/homerooms');
-                const homerooms = await response.json();
-
-                const dropdown = document.getElementById('homeroom');
-                homerooms.forEach(homeroom => {
-                    const option = document.createElement('option');
-                    option.value = homeroom;
-                    option.textContent = homeroom;
-                    dropdown.appendChild(option);
-                });
+                const text = await response.text(); // Get raw response text
+                try {
+                    const homerooms = JSON.parse(text); // Parse as JSON
+                    const dropdown = document.getElementById('homeroom');
+                    homerooms.forEach(homeroom => {
+                        const option = document.createElement('option');
+                        option.value = homeroom;
+                        option.textContent = homeroom;
+                        dropdown.appendChild(option);
+                    });
+                } catch (jsonError) {
+                    console.error(`Invalid JSON response: ${text}`);
+                    throw jsonError;
+                }
             } catch (error) {
                 console.error("Error loading homerooms:", error.message);
             }
         }
+
 
         async function fetchHomeroomData() {
             const homeroom = document.getElementById('homeroom').value;
